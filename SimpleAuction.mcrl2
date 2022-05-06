@@ -1,0 +1,36 @@
+sort pendingReturns;
+cons bider: Int#Int -> pendingReturns;
+map
+    getAddress:pendingReturns -> Int;
+    getValue:pendingReturns -> Int;
+var a,v : Int;
+eqn
+    getAddress(bider(a,v)) = a;
+    getValue(bider(a,v))= v;
+%-----------------------------
+act
+	error,changingOldHighest,call_AuctionEnd,get_AuctionEnd,ending,endAuction,beneficiary;
+	call_bid,get_bid,bidding,getAmount : Int;
+	addNewHighest : pendingReturns;
+	call_withdraw,get_withdraw,withdrawing : Int#Int;
+proc
+	user(value:Int,address:Int) = call_bid(value) + call_withdraw(value,address) + call_AuctionEnd;
+	
+	% firt error for now > auctionEndTime
+	% second error for msg.value <= highestBid
+	Bid(value:Int,address:Int) = get_bid(value).(error + error + 
+			(changingOldHighest.addNewHighest(bider(address,value))));
+	
+	Withdraw(value:Int,address:Int) = get_withdraw(value,address).
+			((getAmount(getValue(bider(address,value)))) > 0) -> update(bider(address,0)) <> delta;
+			
+	% firt error for now < auctionEndTime
+	% second error for ended
+	AuctionEnd = get_AuctionEnd.(error + error + endAuction.beneficiary);
+init
+	%hide({},
+		allow({bidding,withdrawing,ending},
+			comm({call_bid|get_bid -> bidding,call_withdraw|get_withdraw -> withdrawing,
+					call_AuctionEnd|get_AuctionEnd -> ending},
+				user(100,52) || user(200,74) || Bid(100,52) || Bid(200,74) ||
+				Withdraw(100,52) || AuctionEnd));
