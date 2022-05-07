@@ -9,9 +9,9 @@ eqn
     getValue(bider(a,v))= v;
 %-----------------------------
 act
-	error,changingOldHighest,call_AuctionEnd,get_AuctionEnd,ending,endAuction,beneficiary;
+	error,changingOldHighest,call_AuctionEnd,get_AuctionEnd,ending,endAuction,beneficiary,emit,success,fail;
 	call_bid,get_bid,bidding,getAmount : Int;
-	addNewHighest : pendingReturns;
+	addNewHighest,update : pendingReturns;
 	call_withdraw,get_withdraw,withdrawing : Int#Int;
 proc
 	user(value:Int,address:Int) = call_bid(value) + call_withdraw(value,address) + call_AuctionEnd;
@@ -19,14 +19,15 @@ proc
 	% firt error for now > auctionEndTime
 	% second error for msg.value <= highestBid
 	Bid(value:Int,address:Int) = get_bid(value).(error + error + 
-			(changingOldHighest.addNewHighest(bider(address,value))));
+			(changingOldHighest.addNewHighest(bider(address,value)).emit + 
+			addNewHighest(bider(address,value)).emit));
 	
 	Withdraw(value:Int,address:Int) = get_withdraw(value,address).
-			((getAmount(getValue(bider(address,value)))) > 0) -> update(bider(address,0)) <> delta;
+			(value > 0) -> update(bider(address,0)).(success + fail) <> delta;
 			
 	% firt error for now < auctionEndTime
 	% second error for ended
-	AuctionEnd = get_AuctionEnd.(error + error + endAuction.beneficiary);
+	AuctionEnd = get_AuctionEnd.(error + error + endAuction.emit.beneficiary);
 init
 	%hide({},
 		allow({bidding,withdrawing,ending},
