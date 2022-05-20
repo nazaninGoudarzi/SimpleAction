@@ -1,37 +1,68 @@
 sort pendingReturns;
-cons bider: Int#Int -> pendingReturns;
+cons add : Int#Int#pendingReturns -> pendingReturns;
+	 empty: pendingReturns;
 map
-    getAddress:pendingReturns -> Int;
+    arrayHead : pendingReturns -> Int;
+	size : pendingReturns -> Nat;
+	retValue : Int#pendingReturns -> Int;
+	delete : Int#pendingReturns -> pendingReturns;
+	search : Int#pendingReturns -> Bool;
+	getAddress:pendingReturns -> Int;
     getValue:pendingReturns -> Int;
-var a,v : Int;
+	updateTable : Int#Int#pendingReturns -> pendingReturns;
+var array : pendingReturns;
+	a,b,c,v,m : Int;
 eqn
-    getAddress(bider(a,v)) = a;
+    arrayHead(add(a,b,array)) = a;
+	size(empty) = 0;
+	size(add(a,b,array)) = succ(size(array));
+	retValue(a,add(c,b,array)) = if(c == a,b,0);
+	delete(a,add(a,b,array)) = add(a,0,array);
+	search(a,empty) = false;
+	search(a,add(c,b,array)) = if(a == c,true,false);
+	getAddress(bider(a,v)) = a;
     getValue(bider(a,v))= v;
+	updateTable(a,b,add(c,m)) = if(a == c,add(a,b),add(a,0));
 %-----------------------------
 act
-	error,changingOldHighest,call_AuctionEnd,get_AuctionEnd,ending,endAuction,beneficiary,emit,success,fail;
+	error,changingOldHighest,call_AuctionEnd,get_AuctionEnd,ending,endAuction,beneficiary;
 	call_bid,get_bid,bidding,getAmount : Int;
-	addNewHighest,update : pendingReturns;
+	addNewHighest : pendingReturns;
 	call_withdraw,get_withdraw,withdrawing : Int#Int;
 proc
-	user(value:Int,address:Int) = call_bid(value) + call_withdraw(value,address) + call_AuctionEnd;
+	user(value:Int,address:Int) = call_bid(address,value) + 
+		call_withdraw(address).sum result:Bool.get_return_withdraw(result) + 
+		call_AuctionEnd.sum beneficiary_address:Int.sum amount:Int.get_transfer(beneficiary_address,amount);
 	
-	% firt error for now > auctionEndTime
-	% second error for msg.value <= highestBid
-	Bid(value:Int,address:Int) = get_bid(value).(error + error + 
-			(changingOldHighest.addNewHighest(bider(address,value)).emit + 
-			addNewHighest(bider(address,value)).emit));
-	
-	Withdraw(value:Int,address:Int) = get_withdraw(value,address).
-			(value > 0) -> update(bider(address,0)).(success + fail) <> delta;
-			
-	% firt error for now < auctionEndTime
-	% second error for ended
-	AuctionEnd = get_AuctionEnd.(error + error + endAuction.emit.beneficiary);
+	simpleAuction(beneficiary:Int,auctionEndTime:Int,now:Int,highestBid:Int,highestBidder:Int,
+	table:pendingReturns,ended:Bool) =
+		sum address:Int.sum value:Int.get_bid(address,value).
+		(now <= auctionEndTime) ->
+			(value > highestBid) ->
+				(highestBid != 0) -> update(updateTable(highestBidder,highestBid,table)).
+					simpleAuction(beneficiary,auctionEndTime,now + 1,value,address,table,ended)
+				<> delta
+				(highestBid == 0) -> simpleAuction(beneficiary,auctionEndTime,now + 1,value,address,table,ended)
+				<> delta
+			<> delta
+		<> delta +
+		sum address:Int.get_withdraw(address).
+		(retValue(address,table) > 0) -> update(updateTable(address,0,table)).sum send:Bool.
+			(!send) -> update(updateTable(address,retValue(address,table),table)).call_return_withdraw(false).
+				simpleAuction(beneficiary,auctionEndTime,now + 1,highestBid,highestBidder,table,ended)
+			<> delta
+		<> call_return_withdraw(true).
+			simpleAuction(beneficiary,auctionEndTime,now + 1,highestBid,highestBidder,table,ended) +
+		get_AuctionEnd.
+		(now >= auctionEndTime) ->
+			(!ended) -> call_transfer(beneficiary,highestBid).
+				simpleAuction(beneficiary,auctionEndTime,now + 1,highestBid,highestBidder,table,true)
+			<> delete
+		<> delta;
 init
 	%hide({},
-		allow({bidding,withdrawing,ending},
+		allow({bidding,withdrawing,resluting,ending,lastMoney},
 			comm({call_bid|get_bid -> bidding,call_withdraw|get_withdraw -> withdrawing,
-					call_AuctionEnd|get_AuctionEnd -> ending},
-				user(100,52) || user(200,74) || Bid(100,52) || Bid(200,74) ||
-				Withdraw(100,52) || AuctionEnd));
+					call_return_withdraw|get_return_withdraw -> resluting,
+					call_AuctionEnd|get_AuctionEnd -> ending,call_transfer|get_transfer -> lastMoney},
+				user(100,52) || simpleAuction(41,52,14,0,0,empty,false)));
